@@ -204,9 +204,15 @@ sub packages_per_pmfile {
     local $/ = "\n";
     my $inpod = 0;
 
+    my $checked_bom;
+    my $package_or_class = 'package';
   PLINE: while (<$fh>) {
         chomp;
         my($pline) = $_;
+        unless ($checked_bom) {
+            $pline =~ s/\A(?:\x00\x00\xfe\xff|\xff\xfe\x00\x00|\xfe\xff|\xff\xfe|\xef\xbb\xbf)//;
+            $checked_bom = 1;
+        }
         $inpod = $pline =~ /^=(?!cut)/ ? 1 :
             $pline =~ /^=cut/ ? 0 : $inpod;
         next if $inpod;
@@ -220,20 +226,44 @@ sub packages_per_pmfile {
             last PLINE;
         }
 
+=pod
+        # hide in the pod block until 'class' is added to a version bundle
+        if ($pline =~ /^[\s\{;]*use\s(+v?5\.[0-9]+)/) {
+            my $version = $1;
+            my $version_bundle_for_class = version->parse("v5.xx.xx");
+            if (eval { version->parse($version) >= $version_bundle_for_class) {
+                $package_or_class = 'package|class|role';
+            }
+            next PLINE;
+        }
+=cut
+
+        # use feature 'class'; enables class (and role, though not implemented yet)
+        if ($pline =~ /^[\s\{;]*use\s+(?:feature|experimental)\s+[^;]+\b(?:class|all)[^;]*;/) {
+            $package_or_class = 'package|class';
+        }
+        if ($pline =~ /^[\s\{;]*use\s+(?:Feature::Compat::Class)[^;]*;/) {
+            $package_or_class = 'package|class';
+        }
+        # Object::Pad is special-cased; let's ignore other modules that are too old or less known
+        if ($pline =~ /^[\s\{;]*use\s+(?:Object::Pad)[^;]*;/) {
+            $package_or_class = 'package|class|role';
+        }
+
         my $pkg;
         my $strict_version;
 
         if (
             $pline =~ m{
-                      (.*)
-                      (?<![*\$\\@%&]) # no sigils
-                      \bpackage\s+
+                      ^
+                      [\s\{;]*
+                      \b(?:$package_or_class)\s+
                       ([\w\:\']+)
                       \s*
                       (?: $ | [\}\;] | \{ | \s+($version::STRICT) )
                     }x) {
-            $pkg = $2;
-            $strict_version = $3;
+            $pkg = $1;
+            $strict_version = $2;
             if ($pkg eq "DB"){
                 # XXX if pumpkin and perl make him comaintainer! I
                 # think I always made the pumpkins comaint on DB
@@ -327,13 +357,38 @@ sub packages_per_pmfile {
         local $/ = "\n";
         open(FH,$parsefile) or die "Could not open '$parsefile': $!";
         my $inpod = 0;
+        my $package_or_class = 'package';
         while (<FH>) {
             $inpod = /^=(?!cut)/ ? 1 : /^=cut/ ? 0 : $inpod;
             next if $inpod || /^\s*#/;
             last if /^__(?:END|DATA)__\b/; # fails on quoted __END__ but this is rare -> __END__ in the middle of a line is rarer
             chop;
 
-            if (my ($ver) = /package \s+ \S+ \s+ (\S+) \s* [;{]/x) {
+=pod
+            # hide in the pod block until 'class' is added to a version bundle
+            if (/^[\s\{;]*use\s(+v?5\.[0-9]+)/) {
+                my $version = $1;
+                my $version_bundle_for_class = version->parse("v5.xx.xx");
+                if (eval { version->parse($version) >= $version_bundle_for_class) {
+                    $package_or_class = 'package|class|role';
+                }
+                next;
+            }
+=cut
+
+            # use feature 'class'; enables class (and role, though not implemented yet)
+            if (/^[\s\{;]*use\s+(?:feature|experimental)\s+[^;]+\b(?:class|all)[^;]*;/) {
+                $package_or_class = 'package|class';
+            }
+            if (/^[\s\{;]*use\s+(?:Feature::Compat::Class)[^;]*;/) {
+                $package_or_class = 'package|class';
+            }
+            # Object::Pad is special-cased; let's ignore other modules that are too old or less known
+            if (/^[\s\{;]*use\s+(?:Object::Pad)[^;]*;/) {
+                $package_or_class = 'package|class|role';
+            }
+
+            if (my ($ver) = /^[\s\{;]*(?:$package_or_class) \s+ \S+ \s+ (\S+) \s* [;{]/x) {
               # XXX: should handle this better if version is bogus -- rjbs,
               # 2014-03-16
               return $ver if version::is_lax($ver);

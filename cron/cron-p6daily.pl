@@ -1,8 +1,13 @@
-#!/usr/local/bin/perl -w
+#!/home/pause/.plenv/shims/perl
 
 use FindBin;
 use lib "$FindBin::Bin/../lib";
 use PAUSE ();
+
+use PAUSE::Logger '$Logger' => { init => {
+  ident     => 'pause-cron-p6daily',
+  facility  => 'daemon',
+} };
 
 use File::Basename ();
 use DBI;
@@ -67,7 +72,7 @@ sub send_the_mail {
     header_str => [
       Subject => $SUBJECT,
       To      => $PAUSE::Config->{ADMIN},
-      From    => "cron daemon cron-p6daily.pl <upload>",
+      From    => "cron daemon cron-p6daily.pl <upload\@pause.perl.org>",
     ],
     body_str => join(q{}, @blurb),
   );

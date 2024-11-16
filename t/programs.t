@@ -1,4 +1,4 @@
-#!perl -- -*- mode: cperl -*-
+#!perl
 
 use Test::More;
 use File::Spec;
@@ -6,8 +6,6 @@ use lib 't/lib';
 use TestSetup;
 
 sub _f ($) {File::Spec->catfile(split /\//, shift);}
-
-my $Id = q$Id: bap.t 26 2003-02-16 19:01:03Z k $;
 
 my @s = qw(
            bin/paused
@@ -25,6 +23,8 @@ for my $dir (qw(bin cron)) {
 my $tests_per_loop = 1;
 my $plan = scalar @s * $tests_per_loop;
 plan tests => $plan;
+
+$ENV{PAUSE_PAUSED_LOG_FILE} = "/dev/null";
 
 my $devnull = File::Spec->devnull;
 for my $s (1..@s) {

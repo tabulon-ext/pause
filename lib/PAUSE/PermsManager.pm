@@ -20,8 +20,8 @@ has dbh_callback => (
 sub get_package_first_come_any_case {
   my ($self, $pkg) = @_;
   my $dbh = $self->dbh_callback->();
-  my $query = "SELECT package, userid FROM primeur where LOWER(package) = LOWER(?)";
-  my $owner = $dbh->selectrow_arrayref($query, undef, $pkg);
+  my $query = "SELECT package, userid FROM primeur where lc_package = ?";
+  my $owner = $dbh->selectrow_arrayref($query, undef, lc $pkg);
   return $owner->[1] if $owner;
   return "";
 }
@@ -42,13 +42,13 @@ sub get_package_maintainers_list_any_case {
   my $sql = qq{
     SELECT package, userid
       FROM   primeur
-      WHERE  LOWER(package) = LOWER(?)
+      WHERE  lc_package = ?
       UNION
     SELECT package, userid
       FROM   perms
-      WHERE  LOWER(package) = LOWER(?)
+      WHERE  lc_package = ?
   };
-  my @args = ($package) x 2;
+  my @args = (lc $package) x 2;
   return $dbh->selectall_arrayref($sql, undef, @args);
 }
 
@@ -66,10 +66,10 @@ sub plan_package_permission_copy {
         q{
         SELECT userid
         FROM   perms
-        WHERE  LOWER(package) = LOWER(?)
+        WHERE  lc_package = ?
         },
         { Slice => {} },
-        $src,
+        lc $src,
         );
 
     # TODO: correctly set first-come as well
@@ -84,8 +84,8 @@ sub plan_package_permission_copy {
       # we disable errors so that the insert emulates an upsert
       local ( $dbh->{RaiseError} ) = 0;
       local ( $dbh->{PrintError} ) = 0;
-      my $query = "INSERT INTO perms (package, userid) VALUES (?,?)";
-      my $ret   = $dbh->do( $query, {}, $dst, $mods_userid );
+      my $query = "INSERT INTO perms (package, lc_package, userid) VALUES (?,?,?)";
+      my $ret   = $dbh->do( $query, {}, $dst, lc $dst, $mods_userid );
       my $err   = "";
       $err = $dbh->errstr unless defined $ret;
       $ret ||= "";
@@ -116,7 +116,7 @@ sub plan_set_first_come {
     # we disable errors so that the insert emulates an upsert
     local ( $dbh->{RaiseError} ) = 0;
     local ( $dbh->{PrintError} ) = 0;
-    my $ret = $dbh->do("INSERT INTO primeur (package, userid) VALUES (?,?)", undef, $package, $userid);
+    my $ret = $dbh->do("INSERT INTO primeur (package, lc_package, userid) VALUES (?,?,?)", undef, $package, lc $package, $userid);
     my $err = $@;
     $ret //= "";
 
@@ -146,7 +146,7 @@ sub plan_set_comaint {
     # we disable errors so that the insert emulates an upsert
     local ( $dbh->{RaiseError} ) = 0;
     local ( $dbh->{PrintError} ) = 0;
-    my $ret = $dbh->do("INSERT INTO perms (package, userid) VALUES (?,?)", undef, $package, $userid);
+    my $ret = $dbh->do("INSERT INTO perms (package, lc_package, userid) VALUES (?,?,?)", undef, $package, lc $package, $userid);
     my $err = $@;
     $ret //= "";
 
@@ -176,19 +176,19 @@ sub userid_has_permissions_on_package {
   my ($has_perms) = $dbh->selectrow_array(
     qq{
       SELECT COUNT(*) FROM perms
-      WHERE userid = ? AND LOWER(package) = LOWER(?)
+      WHERE userid = ? AND lc_package = ?
     },
     undef,
-    $userid, $package,
+    $userid, lc $package,
   );
 
   my ($has_primary) = $dbh->selectrow_array(
     qq{
       SELECT COUNT(*) FROM primeur
-      WHERE userid = ? AND LOWER(package) = LOWER(?)
+      WHERE userid = ? AND lc_package = ?
     },
     undef,
-    $userid, $package,
+    $userid, lc $package,
   );
 
   return($has_perms || $has_primary);
@@ -197,6 +197,7 @@ sub userid_has_permissions_on_package {
 sub canonicalize_module_casing {
   my ($self, $package) = @_;
 
+  my $lc_package = lc($package // '');
   my $dbh = $self->dbh_callback->();
   my $users = $dbh->selectall_arrayref(
     qq{
@@ -204,54 +205,54 @@ sub canonicalize_module_casing {
             primeur.userid,
             1 AS is_primary
             FROM primeur
-            WHERE LOWER(primeur.package) = LOWER(?)
+            WHERE primeur.lc_package = ?
         UNION
         SELECT
             perms.userid,
             0 AS is_primary
             FROM perms
-            WHERE lower(perms.package) = LOWER(?)
-                AND perms.userid NOT IN (SELECT userid FROM primeur WHERE lower(package) = LOWER(?))
+            WHERE perms.lc_package = ?
+                AND perms.userid NOT IN (SELECT userid FROM primeur WHERE lc_package = ?)
         ;
     },
     { Slice => {} },
-    ($package) x 3
+    ($lc_package) x 3
   );
 
   $dbh->do(
-    qq{DELETE FROM perms   WHERE LOWER(package) = LOWER(?)},
+    qq{DELETE FROM perms   WHERE lc_package = ?},
     undef,
-    $package,
+    $lc_package,
   );
 
   $dbh->do(
-    qq{DELETE FROM primeur WHERE LOWER(package) = LOWER(?)},
+    qq{DELETE FROM primeur WHERE lc_package = ?},
     undef,
-    $package,
+    $lc_package,
   );
 
   for my $user (@$users) {
     $dbh->do(
-      "INSERT INTO perms (package, userid) VALUES (?, ?)",
+      "INSERT INTO perms (package, lc_package, userid) VALUES (?, ?, ?)",
       undef,
-      $package, $user->{userid},
+      $package, $lc_package, $user->{userid},
     );
 
     if ($user->{is_primary}) {
       $dbh->do(
-        "INSERT INTO primeur (package, userid) VALUES (?, ?)",
+        "INSERT INTO primeur (package, lc_package, userid) VALUES (?, ?, ?)",
         undef,
-        $package, $user->{userid},
+        $package, $lc_package, $user->{userid},
       );
     }
   }
 
   $dbh->do(
     qq{
-      UPDATE packages SET package = ? WHERE LOWER(package) = LOWER(?);
+      UPDATE packages SET package = ?, lc_package = ? WHERE lc_package = ?;
     },
     undef,
-    ($package) x 2,
+    $package, ($lc_package) x 2,
   );
 
   return;

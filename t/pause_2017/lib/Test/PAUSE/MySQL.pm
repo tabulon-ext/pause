@@ -1,6 +1,14 @@
 package Test::PAUSE::MySQL;
 
+use Test::Builder ();
 use Test::Requires qw(Test::mysqld);
+use Test::Requires qw(File::Which);
+
+BEGIN {
+  unless (File::Which::which 'mysql') {
+    Test::Builder->new->skip_all("no mysql found, needed for this test")
+  }
+}
 
 use Moose;
 use Test::mysqld;
@@ -16,7 +24,7 @@ $SIG{INT} = sub { die "caught SIGINT, shutting down mysql\n" };
 =head2 SYNOPSIS
 
  my $db
-   = pause_1999::Test::MySQL->new( schemas => ['doc/mod.schema.txt'] );
+   = Test::PAUSE::MySQL->new( schemas => ['doc/mod.schema.txt'] );
 
  my $dbh = $db->dbh;
 

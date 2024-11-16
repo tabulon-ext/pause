@@ -183,8 +183,9 @@ sub remove_dist_primary {
   if (0) {
     # here I discovered that Apache::Request has case-insensitive keys
     my %p = map { $_, [ $req->every_param($_)] } @{$req->param->names};
-    require Data::Dumper; print STDERR "Line " . __LINE__ . ", File: " . __FILE__ . "\n" . Data::Dumper->new([\%p],[qw()])->Indent(1)->Useqq(1)->Dump; # XXX
-
+    require Data::Dumper;
+    my $message = "Line " . __LINE__ . ", File: " . __FILE__ . "\n" . Data::Dumper->new([\%p],[qw()])->Indent(1)->Useqq(1)->Dump;
+    $c->app->pause->log({level => 'debug', message => $message});
   }
 
   if (
@@ -277,8 +278,8 @@ sub make_dist_comaint {
                  )
                 unless $sth1->rows;
         local($db->{RaiseError}) = 0;
-        my $sth = $db->prepare("INSERT INTO perms (package,userid)
-                            VALUES (?,?)");
+        my $sth = $db->prepare("INSERT INTO perms (package,lc_package,userid)
+                            VALUES (?,?,?)");
         my @results;
         for my $seldist (@seldists) {
           die PAUSE::Web::Exception
@@ -290,7 +291,7 @@ sub make_dist_comaint {
               WHERE packages.distname=? AND primeur.userid=?},
             undef, $seldist, $u->{userid});
           for my $selmod (@$mods) {
-            my $ret = $sth->execute($selmod,$other_user);
+            my $ret = $sth->execute($selmod,lc $selmod,$other_user);
             my $err = "";
             $err = $db->errstr unless defined $ret;
             $ret ||= "";

@@ -1,8 +1,15 @@
-#!/usr/local/bin/perl -w
+#!/home/pause/.plenv/shims/perl
+use strict;
+use warnings;
 
 use FindBin;
 use lib "$FindBin::Bin/../lib";
 use PAUSE ();
+
+use PAUSE::Logger '$Logger' => { init => {
+  ident     => 'pause-cron-daily',
+  facility  => 'daemon',
+} };
 
 use File::Basename ();
 use DBI;
@@ -15,7 +22,6 @@ use IO::File       ();
 
 use Email::Sender::Simple ();
 
-use strict;
 use vars qw( $last_str $last_time $SUBJECT @listing $Dbh);
 
 #
@@ -27,6 +33,8 @@ my @TIME = localtime($now);
 $TIME[4]++;
 $TIME[5] += 1900;
 my $TIME = sprintf "%02d" x 5, @TIME[ 5, 4, 3, 2, 1 ];
+
+my $TMPFILE = "/tmp/00whois.new";
 
 my $zcat = $PAUSE::Config->{ZCAT_PATH};
 die "no executable zcat" unless -x $zcat;
@@ -50,6 +58,7 @@ unless (
 
 # read_errorlog();
 for_authors();
+pumpkings();
 watch_files();
 delete_scheduled_files();
 send_the_mail();
@@ -71,7 +80,7 @@ sub read_errorlog {
     close LOG;
     report "\nErrorlog contains $errorlines lines today\n";
   } else {
-    warn "error opening $PAUSE::Config->{HTTP_ERRORLOG}: $!";
+    $Logger->log("error opening $PAUSE::Config->{HTTP_ERRORLOG}: $!");
   }
 }
 
@@ -232,7 +241,8 @@ sub watch_files {
           quoteHighBit => 1,
         );
         my $v = $d->stringify($File::Find::name);
-        warn sprintf qq{Found a bad directory v[%s], rmtree-ing}, $v;
+
+        $Logger->log([ qq{Found a bad directory v[%s], rmtree-ing}, $v ]);
         require File::Path;
         File::Path::rmtree($File::Find::name);
       }
@@ -336,7 +346,7 @@ sub send_the_mail {
     header_str => [
       Subject => $SUBJECT,
       To      => $PAUSE::Config->{ADMIN},
-      From    => "cron daemon cron-daily.pl <upload>",
+      From    => "cron daemon cron-daily.pl <upload\@pause.perl.org>",
     ],
     body_str => join(q{}, @blurb),
   );
@@ -393,7 +403,7 @@ sub whois {
     scalar(gmtime),
     $0,
   );
-  open FH, ">00whois.new" or return "Error: Can't open 00whois.new: $!";
+  open FH, ">", $TMPFILE or return "Error: Can't open $TMPFILE: $!";
   if ($] > 5.007) {
     require Encode;
     binmode FH, ":utf8";
@@ -573,10 +583,10 @@ sub whois {
         </dl></body></html>
     ];
   close FH;
-  if (compare '00whois.new', "$PAUSE::Config->{MLROOT}/../00whois.html") {
-    report qq[copy 00whois.new $PAUSE::Config->{MLROOT}/../00whois.html\n\n];
+  if (compare $TMPFILE, "$PAUSE::Config->{MLROOT}/../00whois.html") {
+    report qq[copy $TMPFILE $PAUSE::Config->{MLROOT}/../00whois.html\n\n];
     my $whois_file = "$PAUSE::Config->{MLROOT}/../00whois.html";
-    xcopy '00whois.new', $whois_file;
+    xcopy $TMPFILE, $whois_file;
     PAUSE::newfile_hook($whois_file);
 
     my $xml_file = "$PAUSE::Config->{MLROOT}/../00whois.xml";
@@ -640,7 +650,10 @@ sub mailrc {
         require Text::Unidecode;
         $r[1] = Text::Unidecode::unidecode($r[1]);
       };
-      warn $@ if $@;
+
+      if ($@) {
+        $Logger->log([ "error unidecoding: %s", "$@" ]);
+      }
     }
     $r[1] =~ s/["<>]//g;
     push @list, sprintf qq{alias %-10s "%s <%s>"\n}, @r[ 0 .. 2 ];
@@ -729,6 +742,60 @@ sub authors {
     $author->[1] ||= sprintf q{%s@cpan.org}, lc($author->[0]);
 
     $list .= (join qq{\t}, @$author) . "\n";
+  }
+
+  if ($list ne $olist) {
+    if (open F, "| $gzip -9c > $repfile") {
+      if ($] > 5.007) {
+        binmode F, ":utf8";
+      }
+      print F $list;
+      close F or return "ERROR: error closing $repfile: $!";;
+    } else {
+      return ("ERROR: Couldn't open $repfile to write: $!");
+    }
+  } else {
+    # print "Endlich keine neue Version geschrieben\n";
+  }
+  PAUSE::newfile_hook($repfile);
+  return;
+}
+
+sub pumpkings {
+  # Rewriting 08pumpkings.txt
+
+  my $repfile = "$PAUSE::Config->{MLROOT}/../08pumpkings.txt.gz";
+  my $list    = "";
+  my $olist   = "";
+
+  if (-e $repfile) {
+    local ($/) = undef;
+    if (open F, "$zcat $repfile|") {
+      if ($] > 5.007) {
+        binmode F, ":utf8";
+      }
+      $olist = <F>;
+      close F;
+    }
+  }
+
+  my @pumpkings;
+  my $authen_dbh = DBI->connect(
+    $PAUSE::Config->{AUTHEN_DATA_SOURCE_NAME},
+    $PAUSE::Config->{AUTHEN_DATA_SOURCE_USER},
+    $PAUSE::Config->{AUTHEN_DATA_SOURCE_PW},
+    { RaiseError => 1 }
+  ) or report "Connect to database not possible: $DBI::errstr\n";
+
+  my $sth = $authen_dbh->prepare("SELECT user FROM grouptable WHERE ugroup='pumpking' order by user");
+  $sth->execute;
+  while (my @row = $sth->fetchrow_array) {
+    push @pumpkings, $row[0];
+  }
+  $sth->finish;
+
+  for my $pumpking (@pumpkings) {
+    $list .= $pumpking . "\n";
   }
 
   if ($list ne $olist) {

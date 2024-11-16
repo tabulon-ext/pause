@@ -1,16 +1,10 @@
-#!/usr/local/bin/perl -w
-
-# use 5.010;
+#!/home/pause/.plenv/shims/perl
 use strict;
 use warnings;
 
 =head1 NAME
 
-
-
-=head1 SYNOPSIS
-
-
+update-checksums.pl
 
 =head1 OPTIONS
 
@@ -44,10 +38,7 @@ start at this directory
 
 =head1 DESCRIPTION
 
-
-
 =cut
-
 
 use FindBin;
 use lib "$FindBin::Bin/../lib";
@@ -60,16 +51,19 @@ use Getopt::Long;
 use Hash::Util qw(lock_keys);
 use Pod::Usage;
 
-my $lockfile = "/var/run/PAUSE-update-checksums.LCK";
+use PAUSE::Logger '$Logger' => { init => {
+  ident     => 'pause-update-checksums',
+  facility  => 'daemon',
+} };
+
+my $lockfile = "/home/pause/run/PAUSE-update-checksums.LCK";
 use Fcntl qw( :flock :seek O_RDONLY O_RDWR O_CREAT );
 my $lfh;
 unless (open $lfh, "+<", $lockfile) {
     open $lfh, ">>", $lockfile or die "Could not open lockfile: $!";
     open $lfh, "+<", $lockfile or die "Could not open lockfile: $!";
 }
-if (flock $lfh, LOCK_EX|LOCK_NB) {
-    warn "Info: Got the lock, continuing";
-} else {
+if (not flock $lfh, LOCK_EX|LOCK_NB) {
     die "lockfile '$lockfile' locked by a different process; cannot continue";
 }
 
@@ -94,8 +88,10 @@ use PAUSE ();
 
 $Opt{debug} ||= 0;
 if ($Opt{debug}) {
-  warn "Debugging on. CPAN::Checksums::VERSION[$CPAN::Checksums::VERSION]";
+  $Logger->set_debug(1);
+  $Logger->log("Debugging on. CPAN::Checksums::VERSION[$CPAN::Checksums::VERSION]");
 }
+
 my $root = $PAUSE::Config->{MLROOT};
 $Opt{startdir} //= $root;
 our $TESTDIR;
@@ -165,7 +161,7 @@ find(sub {
        }
        my $ret = eval { CPAN::Checksums::updatedir($ffname, $root); };
        if ($@) {
-         warn "error[$@] in checksums file[$ffname]: must unlink";
+         $Logger->log("error[$@] in checksums file[$ffname]: must unlink");
          unlink "$ffname/CHECKSUMS";
        }
        if ($Opt{debug}) {
@@ -181,7 +177,14 @@ find(sub {
            ) or die $!;
          $yaml->{stop} = time;
          my $tooktime = sprintf "%.6f", $yaml->{stop} - $yaml->{start};
-         warn "debugdir[$debugdir]ret[$ret]tooktime[$tooktime]cnt[$cnt]\n";
+
+         $Logger->log_event('checksum-debugging-file' => [
+           debugdir => $debugdir,
+           ret      => $ret,
+           tooktime => $tooktime,
+           cnt      => $cnt,
+         ]);
+
          $yaml->{tooktime} = $tooktime;
          YAML::Syck::DumpFile(File::Spec->catfile($debugdir,
                                                   "YAML"), $yaml);

@@ -58,6 +58,12 @@ our $MAINTAIN_SYMLINKTREE = 1;
 use Fcntl qw(:flock);
 # this class shows that it was born as spaghetticode
 
+# This can/should be replaced by making things like "reasons to skip indexing a
+# dist" into an enumerated type.  Until that happens, though, this one needs to
+# be easy to refer to, because it's compared against (search for the var name
+# below). -- rjbs, 2024-04-28
+my $OLD_UNCHANGED_FILE = "file mtime has not changed";
+
 sub new {
     my $class = shift;
     my $opt = shift;
@@ -165,7 +171,6 @@ sub rewrite_indexes {
     $self->rewrite01();
     $self->rewrite03();
     $self->rewrite06();
-    $self->rewrite07();
     $Logger->log("finished rewriting indexes");
 
     $self->git->commit({ m => "indexer run at $^T, pid $$" })
@@ -368,14 +373,14 @@ sub _do_the_database_work {
     my $main_pkg = $dio->_package_governing_permission;
 
     if ($self->permissions->userid_has_permissions_on_package($dio->{USERID}, $main_pkg)) {
+      $dio->normalize_package_casing;
+
       $dbh->commit;
     } else {
       $dio->alert("Uploading user has no permissions on package $main_pkg");
       $dio->{NO_DISTNAME_PERMISSION} = 1;
       $dbh->rollback;
     }
-
-    $dio->normalize_package_casing;
 
     return 1;
   };
@@ -411,7 +416,7 @@ sub reason_to_skip_dist {
     }
 
     unless ($dio->mtime_ok($self->{ALLlasttime}{$dist})){
-        return "mtime not okay";
+        return $OLD_UNCHANGED_FILE;
     }
 
     unless ($dio->lock) {
@@ -432,7 +437,13 @@ sub maybe_index_dist {
     local $Logger = $Logger->proxy({ proxy_prefix => "$dist: " });
 
     if (my $skip_reason = $self->reason_to_skip_dist($dio)) {
-        $Logger->log("skipping: $skip_reason");
+        # We don't log on a few things that are extremely common and lead to
+        # noise in the logs. -- rjbs, 2024-04-28
+        my $log_method = $skip_reason eq $OLD_UNCHANGED_FILE ? 'log_debug'
+                       : $skip_reason eq "non-dist file"     ? 'log_debug'
+                       :                                       'log';
+        $Logger->$log_method("skipping: $skip_reason");
+
         delete $self->{ALLlasttime}{$dist};
         delete $self->{ALLfound}{$dist};
         return;
@@ -1327,26 +1338,6 @@ Date:        %s
         rename "$repfile.gz.new", "$repfile.gz" or
             $Logger->log("couldn't rename to $repfile.gz: $!");
         PAUSE::newfile_hook("$repfile.gz");
-    }
-}
-
-sub rewrite07 {
-    my($self) = @_;
-    my $fromdir = $PAUSE::Config->{FTP_RUN} or $Logger->log("FTP_RUN not defined");
-    $fromdir .= "/mirroryaml";
-    -d $fromdir or $Logger->log("FTP_RUN directory [$fromdir] does not exist");
-    my $mlroot = $self->mlroot or $Logger->log("MLROOT not defined");
-    my $todir = "$mlroot/../../modules";
-    -d $todir or $Logger->log("mirror list target directory [$todir] does not exist");
-    for my $exte (qw(json yml)) {
-        my $f = "$fromdir/mirror.$exte";
-        my $t = "$todir/07mirror.$exte";
-        next unless -e $f;
-        rename $f, $t or $Logger->log([
-          "couldn't rename: %s",
-          { old => $f, new => $t, err => "$!" },
-        ]);
-        PAUSE::newfile_hook($t);
     }
 }
 

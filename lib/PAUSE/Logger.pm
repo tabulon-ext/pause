@@ -15,7 +15,7 @@ sub default_logger_class { 'PAUSE::Logger::_Logger' }
 
 sub default_logger_args {
   return {
-    ident     => "PAUSE",
+    ident     => "PAUSE-unidentified",
 
     # to turn on syslogging...
     facility  => 'daemon', # where "daemon" is whatever syslog facility you want
@@ -36,7 +36,8 @@ sub default_logger_args {
       my @time = localtime $sec;
       sprintf "%4u-%02u-%02u %02u:%02u:%02u.%04u %s\n",
         $time[5]+1900,
-        @time[4,3,2,1,0],
+        $time[4]+1,
+        @time[3,2,1,0],
         int($usec/1000),
         $_[0]
     };

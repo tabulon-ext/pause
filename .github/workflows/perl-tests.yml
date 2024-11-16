@@ -1,0 +1,96 @@
+name: "PAUSE test suite"
+on:
+  push:
+  pull_request:
+    types:
+    - opened
+    - synchronize
+    - reopened
+    - labeled
+
+#
+# * To trigger a coverage run, add the `want-coverage` label, and
+# cover will be used instead of prove.  Results will be posted to
+# https://coveralls.io/github/andk/pause
+#
+# * To flush the GitHub Actions Cache:
+# https://github.com/andk/pause/actions/caches
+#
+
+jobs:
+  the-tests:
+    runs-on: ubuntu-latest
+    container:
+      image: perldocker/perl-tester:5.36-slim-bookworm
+    strategy:
+      fail-fast: false
+    env:
+      PLACK_ENV: ghaction
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+      - name: Makefile.PL
+        run: |
+          perl Makefile.PL && make
+      - name: Install prereqs (apt)
+        run: |
+          apt update
+          apt-get install -y \
+            gnupg \
+            libdb-dev \
+            libexpat-dev \
+            libmariadb-dev-compat \
+            libxml2-dev \
+            mariadb-server \
+            nodejs \
+            rsync \
+            zip
+      - name: Get Perl Version
+        id: get-perl-version
+        run: |
+          echo version="$(perl -le 'print $]')" >> $GITHUB_OUTPUT
+        shell: bash
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/perl5/site_perl
+          key: ${{ runner.os }}-${{ steps.get-perl-version.outputs.version }}-${{ hashFiles('Makefile.PL') }}
+      - name: Install prereqs (cpan)
+        # This could probably be made more efficient by looking at what it's
+        # installing via cpanm that could, instead, be installed from apt.  I
+        # may do that later, but for now, it's fine! -- rjbs, 2023-01-07
+        run: cpanm --notest --installdeps .
+      - name: Run the tests
+        if: "!(contains(github.event.pull_request.labels.*.name, 'want-coverage'))"
+        run: prove -lr -j4 t
+        continue-on-error: true
+      - name: Run tests (with coverage)
+        if: contains(github.event.pull_request.labels.*.name, 'want-coverage')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cpanm -n Devel::Cover::Report::Coveralls
+          cover -test -report Coveralls | tee -a $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: plack.log
+          path: |
+            /tmp/plack.log
+#      - name: Install yath and JUnit renderer
+#        run: cpanm --notest Test2::Harness Test2::Harness::Renderer::JUnit
+#      - name: Run the tests
+#        # We disable Test::Perl::Critic because of a bug in
+#        # Test2::Harness::Renderer::JUnit.  See:
+#        # https://github.com/cpanel/Test2-Harness-Renderer-JUnit/issues/16
+#        # -- rjbs, 2023-05-05
+#        run: |
+#          NO_PERL_CRITIC=1 JUNIT_TEST_FILE="/tmp/test-output.xml" ALLOW_PASSING_TODOS=1 yath test --renderer=Formatter --renderer=JUnit -D
+#      - name: Publish test report
+#        uses: mikepenz/action-junit-report@v3
+#        if: always() # always run even if the previous step fails
+#        with:
+#          check_name: JUnit Report
+#          report_paths: /tmp/test-output.xml

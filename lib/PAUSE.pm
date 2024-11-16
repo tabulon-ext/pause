@@ -33,7 +33,6 @@ if ($USE_RECENTFILE_HOOKS) {
     die "Did not find Recentfile library!";
   }
 }
-our $IS_PAUSE_US = Sys::Hostname::hostname =~ /pause2/ ? 1 : 0;
 
 use v5.12.0;
 use vars qw(@ISA @EXPORT_OK $VERSION $Config $Id);
@@ -69,10 +68,6 @@ push @INC, $pauselib;
 
 $PAUSE::Config ||=
     {
-     # previously also used for ftp password; still used in Error as
-     # contact address and as address to send internal notifications
-     # to:
-     FTP_RUN => qq{/home/ftp/run},
      ABRA_EXPIRATION => 86400/4,
      ADMIN => q{andreas.koenig.gmwojprw+pause@franz.ak.mind.de, neilb@neilb.org},
      ADMINS => [qq(modules\@perl.org)],
@@ -81,56 +76,53 @@ $PAUSE::Config ||=
      AUTHEN_PASSWORD_FLD => "password",
      AUTHEN_USER_FLD => "user",
      AUTHEN_USER_TABLE => "usertable",
-     AUTHEN_BACKUP_DIR => $IS_PAUSE_US
-     ? '/home/puppet/pause-var/backup'
-     : '/home/k/PAUSE/111_sensitive/backup',
+     AUTHEN_BACKUP_DIR => '/home/pause/db-backup',
      BZCAT_PATH => (List::Util::first { -x $_ } ("/bin/bzcat", "/usr/bin/bzcat" )),
      BZIP2_PATH => (List::Util::first { -x $_ } ("/bin/bzip2", "/usr/bin/bzip2" )),
      CPAN_TESTERS => qq(cpan-uploads\@perl.org), # cpan-uploads is a mailing list, BINGOS relies on it
      TO_CPAN_TESTERS => qq(cpan-uploads\@perl.org),
      REPLY_TO_CPAN_TESTERS => qq(cpan-uploads\@perl.org),
      DELETES_EXPIRE => 60*60*72,
-     FTPPUB => '/home/ftp/pub/PAUSE/',
-     GITROOT => '/home/ftp/pub/PAUSE/PAUSE-git',
+     FTPPUB => '/data/pause/pub/PAUSE/',
+     GITROOT => '/data/pause/pub/PAUSE/PAUSE-git',
      GONERS_NOTIFY => qq{gbarr\@search.cpan.org},
      GZIP_OPTIONS => '--best --rsyncable',
      GZIP_PATH => (List::Util::first { -x $_ } ("/bin/gzip", "/usr/bin/gzip" )),
-     HOME => $IS_PAUSE_US ? '/home/puppet/' : '/home/k/',
-     CRONPATH => $IS_PAUSE_US ? '/home/puppet/pause/cron' : '/home/k/pause/cron',
-     HTTP_ERRORLOG => '/usr/local/apache/logs/error_log', # harmless use in cron-daily
-     INCOMING => $IS_PAUSE_US ? 'ftp://localhost/incoming/' : 'ftp://pause.perl.org/incoming/',
-     INCOMING_LOC => '/home/ftp/incoming/',
+     CRONPATH => '/home/pause/pause/cron/',
+     HTTP_ERRORLOG => '/var/log/nginx/error.log', # harmless use in cron-daily
+     INCOMING => 'file://data/pause/incoming/',
+     INCOMING_LOC => '/data/pause/incoming',
      MAIL_MAILER => ["sendmail"],
      MAXRETRIES => 16,
      MIRRORCONFIG => '/usr/local/mirror/mymirror.config',
      MIRRORED_BY_URL => "ftp://ftp.funet.fi/pub/languages/perl/CPAN/MIRRORED.BY",
-     MLROOT => '/home/ftp/pub/PAUSE/authors/id/', # originally module list root
-     ML_CHOWN_USER  => $IS_PAUSE_US ? qq{pause-unsafe} : qq{UNSAFE},
-     ML_CHOWN_GROUP => $IS_PAUSE_US ? qq{pause-unsafe} : qq{UNSAFE},
+     MLROOT => '/data/pause/pub/PAUSE/authors/id/', # originally module list root
+     ML_CHOWN_USER  => q{unsafe},
+     ML_CHOWN_GROUP => q{unsafe},
      ML_MIN_INDEX_LINES => 1_000, # 02packages must be this long
      ML_MIN_FILES => 20_000, # must be this many files to run mldistwatch
      MOD_DATA_SOURCE_NAME => "dbi:mysql:mod",
      NO_SUCCESS_BREAK => 900,
      P5P => 'release-announce@perl.org',
-     PID_DIR => "/var/run/",
-     PAUSE_LOG => $IS_PAUSE_US ? "/var/log/paused.log" : "/home/k/PAUSE/log/paused.log",
-     PAUSE_LOG_DIR => $IS_PAUSE_US ? "/var/log" : "/home/k/PAUSE/log/",
-     PAUSE_PUBLIC_DATA => '/home/ftp/pub/PAUSE/PAUSE-data',
+     PID_DIR => "/home/pause/pid/",
+     PAUSE_LOG => "/home/pause/log/paused.log",
+     PAUSE_LOG_DIR => "/home/pause/log/",
+     PAUSE_PUBLIC_DATA => '/data/pause/pub/PAUSE/PAUSE-data',
      PML => 'ftp://pause.perl.org/pub/PAUSE/authors/id/',
      PUB_MODULE_URL => 'http://www.cpan.org/authors/id/',
-     RUNDATA => "/usr/local/apache/rundata/pause_1999",
+     RUNDATA => "/tmp/pause.rundata",
      RUNTIME_MLDISTWATCH => 600, # 720 was the longest of on 2003-08-10,
                                  # 2004-12-xx we frequently see >20 minutes
                                  # 2006-05-xx 7-9 minutes observed
      SLEEP => 75,
      TIMEOUT => 60*60,
-     TMP => '/home/ftp/tmp/',
+     TRUST_IS_SSL_HEADER => 1,
+     TMP => '/data/pause/tmp/',
      UPLOAD => 'upload@pause.perl.org',
      # sign the auto-generated CHECKSUM files with:
-     CHECKSUMS_SIGNING_PROGRAM => ('gpg'),
-     CHECKSUMS_SIGNING_ARGS => '--homedir /home/puppet/pause-private/gnupg-pause-batch-signing-home --clearsign --default-key ',
-     CHECKSUMS_SIGNING_KEY => '450F89EC',
-     BATCH_SIG_HOME => "/home/puppet/pause-private/gnupg-pause-batch-signing-home",
+     CHECKSUMS_SIGNING_PROGRAM => 'gpg',
+     CHECKSUMS_SIGNING_ARGS => '-q --homedir /home/pause/pause-private/gnupg-pause-batch-signing-home --clearsign --default-key ',
+     CHECKSUMS_SIGNING_KEY => '6BA1716EFB099DB2',
      MIN_MTIME_CHECKSUMS => 1300000000, # invent a threshold for oldest mtime
      HAVE_PERLBAL => 1,
      ZCAT_PATH  => (List::Util::first { -x $_ } ("/bin/zcat", "/usr/bin/zcat" )),
@@ -216,14 +208,10 @@ Hint: I like to use date to determine a timestamp in the future
 =cut
 
 sub downtimeinfo {
-  return $IS_PAUSE_US ? +{
-                          downtime => 1357374600,
-                          willlast => 5400,
-                         }
-      : +{
-          downtime => 1357374600,
-          willlast => 5400,
-         };
+  return +{
+    downtime => 1714100000,
+    willlast => 5400,
+  };
 }
 
 sub filehash {
@@ -306,7 +294,6 @@ sub user2dir {
   $result;
 }
 
-# available as pause_1999::main::file_to_user method
 sub dir2user {
   my($uriid) = @_;
   $uriid =~ s|^/?authors/id||;
@@ -345,7 +332,7 @@ sub owner_of_module {
                    FROM mods where modid = ?},
                  primeur => qq{SELECT package,
                           userid
-                   FROM primeur where LOWER(package) = LOWER(?)},
+                   FROM primeur where lc_package = LOWER(?)},
                 );
     for my $table (qw(mods primeur)) {
         my $owner = $dbh->selectrow_arrayref($query{$table}, undef, $m);
@@ -447,7 +434,7 @@ sub newfile_hook {
     $rf = File::Rsync::Mirror::Recentfile->new
         (
          @common_args,
-         localroot => "/home/ftp/pub/PAUSE/authors/",
+         localroot => "/data/pause/pub/PAUSE/authors/",
          aggregator => [qw(6h 1d 1W 1M 1Q 1Y Z)],
         );
   };
@@ -459,7 +446,7 @@ sub newfile_hook {
   $rf = File::Rsync::Mirror::Recentfile->new
       (
        @common_args,
-       localroot => "/home/ftp/pub/PAUSE/modules/",
+       localroot => "/data/pause/pub/PAUSE/modules/",
        aggregator => [qw(1d 1W Z)],
       );
   $rf->update($f,"new");
@@ -473,7 +460,7 @@ sub delfile_hook {
     $rf = File::Rsync::Mirror::Recentfile->new
         (
          @common_args,
-         localroot => "/home/ftp/pub/PAUSE/authors/",
+         localroot => "/data/pause/pub/PAUSE/authors/",
          aggregator => [qw(6h 1d 1W 1M 1Q 1Y Z)],
         );
   };
@@ -485,7 +472,7 @@ sub delfile_hook {
   $rf = File::Rsync::Mirror::Recentfile->new
       (
        @common_args,
-       localroot => "/home/ftp/pub/PAUSE/modules/",
+       localroot => "/data/pause/pub/PAUSE/modules/",
        aggregator => [qw(1d 1W Z)],
       );
   $rf->update($f,"delete");

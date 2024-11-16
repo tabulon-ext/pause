@@ -1,10 +1,14 @@
-#!/usr/local/bin/perl
-
+#!/home/pause/.plenv/shims/perl
 use FindBin;
 use lib "$FindBin::Bin/../lib";
 use PAUSE ();
 use DBI;
 use File::Spec;
+
+use PAUSE::Logger '$Logger' => { init => {
+  ident     => 'pause-cleanup-incoming',
+  facility  => 'daemon',
+} };
 
 my $incdir = File::Spec->canonpath($PAUSE::Config->{INCOMING_LOC});
 
@@ -32,15 +36,8 @@ for my $dirent (readdir DIR) {
       next if $sth->rows > 0;
   }
   my $size = -s $absdirent;
-  if (0 && $dirent =~ /^(\d+)\.(\d+)$/) { # these come often, but I could not decipher
-    open my $fh, $absdirent or die "Could not open $absdirent: $!";
-    local $/;
-    my $str = <$fh>;
-    substr($str,100*1024) = "" if length($str)> 100*1024;
-    require Data::Dumper;
-    warn sprintf "content[%s]\n", Data::Dumper::Dumper($str);
-  }
+
   unlink $absdirent or die "Could not unlink $absdirent: $!";
-  warn "unlinked $absdirent ($size)\n";
+  $Logger->log("unlinked $absdirent ($size)");
 }
 closedir DIR;
